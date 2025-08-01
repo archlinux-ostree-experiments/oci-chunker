@@ -1,6 +1,8 @@
+mod pkgdb;
 mod rpm_ostree;
+
 use clap::Parser;
-use ostree_ext::containers_image_proxy;
+use pkgdb::*;
 use rpm_ostree::*;
 
 // #[tokio::main]
