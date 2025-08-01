@@ -27,8 +27,11 @@ async fn async_main() -> Result<(), tokio::task::JoinError> {
         println!("repo: {:?}", repo);
 
         let mut s = String::new();
-        std::io::stdin().read_line(&mut s).expect("Did not enter a correct string");
-    }).await
+        std::io::stdin()
+            .read_line(&mut s)
+            .expect("Did not enter a correct string");
+    })
+    .await
 }
 
 fn main() -> Result<(), anyhow::Error> {
