@@ -9,6 +9,10 @@ use crate::pkgdb::{Package, PackageDatabase};
 
 const QUERY_FORMAT: &str = "%{nevra},%{name},%{version},%{sourcerpm},%{size}\\n";
 
+/// Parses RPM query output into a `PackageRpmQa` struct.
+///
+/// Expects an iterator of strings that represent lines from `rpm -qa` output
+/// in the format: `nevra,name,version,sourcerpm,size`
 fn get_components<I: Iterator<Item = String>>(mut it: I) -> Result<PackageRpmQa, anyhow::Error> {
     let unexpected_rpm_output = || anyhow::Error::msg("unexpected rpm output");
     let (identifier, name, version, source, size) = (
@@ -32,12 +36,18 @@ pub struct RpmDb {
 }
 
 impl RpmDb {
+    /// Creates a new `RpmDb` instance pointing to the specified database path.
     pub fn new<P: AsRef<Path>>(database: P) -> Self {
         Self {
             database: database.as_ref().to_path_buf(),
         }
     }
 
+    /// Queries metadata for all installed packages in the RPM database.
+    ///
+    /// This method uses the `rpm` command to query package information and
+    /// returns a vector of `PackageRpmQa` structs containing all the
+    /// needed information with the exception of the file list.
     fn query_metadata(&self) -> Result<Vec<PackageRpmQa>, anyhow::Error> {
         let child = Command::new("/usr/bin/rpm")
             .arg("--dbpath")
@@ -60,6 +70,7 @@ impl RpmDb {
         Ok(packages)
     }
 
+    /// Queries the file list for a specific package identified by its NEVRA (Name-Epoch-Version-Release-Architecture).
     fn query_files(&self, nevra: &str) -> Result<Vec<PathBuf>, anyhow::Error> {
         let child = Command::new("/usr/bin/rpm")
             .arg("--dbpath")
