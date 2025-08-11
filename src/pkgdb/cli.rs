@@ -7,7 +7,7 @@ use clap::{Args, Parser, ValueEnum};
 #[cfg(feature = "archlinux")]
 use crate::pkgdb::archlinux::AlpmDb;
 use crate::{
-    pkgdb::{PackageDatabase, PackageDatabaseWithDefaultPath, PackageIndex, rpm::RpmDb},
+    pkgdb::{postprocessing::Postprocessing, rpm::RpmDb, PackageDatabase, PackageDatabaseWithDefaultPath, PackageIndex},
     rpm_ostree::run_with_mount,
 };
 
@@ -55,20 +55,38 @@ pub(crate) enum ChangelogResolution {
 pub(crate) struct BuildPackageIndexOpts {
     #[clap(long, required = false, default_value = "rpm")]
     pub backend: PackageBackend,
-    #[clap(long, required_unless_present = "image", help = "path to a rootfs containing the package manager database")]
+    #[clap(
+        long,
+        required_unless_present = "image",
+        help = "path to a rootfs containing the package manager database"
+    )]
     pub sysroot: Option<Utf8PathBuf>,
-    #[clap(long, required_unless_present = "sysroot", help = "path to a container image in container-storage containing the package manager database")]
+    #[clap(
+        long,
+        required_unless_present = "sysroot",
+        help = "path to a container image in container-storage containing the package manager database"
+    )]
     pub image: Option<String>,
-    #[clap(long, required = false, help = "path to the package manager database inside the image/rootfs")]
+    #[clap(
+        long,
+        required = false,
+        help = "path to the package manager database inside the image/rootfs"
+    )]
     pub pkgdb_path: Option<Utf8PathBuf>,
     #[clap(long, required = false, default_value = "previous-index")]
     pub changelog_source: ChangelogSource,
     #[clap(long, required = false, default_value = "weekly")]
     pub changelog_resolution: ChangelogResolution,
     #[clap(long, required = false)]
-    pub previous_package_metadata: Option<Utf8PathBuf>,
+    pub previous_package_index: Option<Utf8PathBuf>,
     #[clap(long, required = false)]
-    pub output_package_metadata: Option<Utf8PathBuf>,
+    pub output_package_index: Option<Utf8PathBuf>,
+    #[clap(
+        long,
+        required = false,
+        help = "YAML file with postprocessing information (add and merge packages)"
+    )]
+    pub postprocessing: Option<Utf8PathBuf>,
     #[clap(long, required = false)]
     pub output_ostree_ext_metadata: Option<Utf8PathBuf>,
 }
@@ -93,6 +111,13 @@ impl BuildPackageIndexOpts {
             self.pkgdb_path.as_ref().map(|p| p.as_ref()),
         )?;
         let packages = backend.get_packages()?;
+        let packages = match self.postprocessing {
+            Some(ref postprocessing_path) => {
+                let postprocessing = Postprocessing::new_from_toml(postprocessing_path)?;
+                postprocessing.apply(packages)?
+            }
+            None => packages
+        };
         let packages = match self.changelog_source {
             ChangelogSource::PackageDatabase => packages
                 .into_iter()
@@ -104,7 +129,7 @@ impl BuildPackageIndexOpts {
                 .collect::<Result<Vec<PackageIndex>, anyhow::Error>>()?,
             ChangelogSource::PreviousIndex => {
                 let previous_package_metadata = if let Some(previous_package_metadata) =
-                    &self.previous_package_metadata
+                    &self.previous_package_index
                 {
                     serde_json::from_reader::<_, Vec<PackageIndex>>(File::open(
                         previous_package_metadata,

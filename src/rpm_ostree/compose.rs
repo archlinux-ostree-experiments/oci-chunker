@@ -91,23 +91,10 @@ pub(crate) struct BuildChunkedOCIOpts {
     #[clap(long, required_unless_present = "rootfs")]
     from: Option<String>,
 
-    #[clap(long)]
-    /// Maximum number of layers to use. The default value of 64 is chosen to
-    /// balance splitting up an image into sufficient chunks versus
-    /// compatibility with older OCI runtimes that may have problems
-    /// with larger number of layers.
-    /// However, with recent podman 5 for example with newer overlayfs,
-    /// it works to use over 200 layers.
-    max_layers: Option<NonZeroU32>,
-
-    /// Tag to use for output image, or `latest` if unset.
-    #[clap(long, default_value = "latest")]
-    reference: String,
-
     /// Output image reference, in TRANSPORT:TARGET syntax.
     /// For example, `containers-storage:localhost/exampleos` or `oci:/path/to/ocidir`.
     #[clap(long, required = true)]
-    output: String,
+    output: Utf8PathBuf,
 }
 
 impl BuildChunkedOCIOpts {
@@ -117,7 +104,7 @@ impl BuildChunkedOCIOpts {
             Podman(Mount),
         }
 
-        let existing_manifest = self.check_existing_image(&self.output)?;
+        //let existing_manifest = self.check_existing_image(&self.output)?;
 
         let rootfs_source = if let Some(rootfs) = self.rootfs {
             FileSource::Rootfs(rootfs)
@@ -165,14 +152,9 @@ impl BuildChunkedOCIOpts {
             .map(chrono::DateTime::parse_from_rfc3339)
             .transpose()?;
 
-        // Allocate a working temporary directory
-        let td = tempfile::tempdir_in("/var/tmp")?;
-
-        // Note: In a format v2, we'd likely not use ostree.
-        let repo_path: Utf8PathBuf = td.path().join("repo").try_into()?;
         let repo = ostree::Repo::create_at(
             libc::AT_FDCWD,
-            repo_path.as_str(),
+            self.output.as_str(),
             ostree::RepoMode::BareUser,
             None,
             gio::Cancellable::NONE,
@@ -199,48 +181,14 @@ impl BuildChunkedOCIOpts {
             None
         };
 
-        let manifest_data_tmpfile = if let Some(manifest) = existing_manifest.as_ref() {
-            let mut tmpf = tempfile::NamedTempFile::new()?;
-            serde_json::to_writer(&mut tmpf, &manifest)?;
-            Some(tmpf)
-        } else {
-            None
-        };
-        let manifest_data = manifest_data_tmpfile.as_ref().map(|t| t.path());
-        let args: [String; 11] = [
-            "compose".to_string(),
-            "container-encapsulate".to_string(),
-            "--repo".to_string(),
-            repo_path.to_string(),
-            label_arg.join(" "),
-            self.max_layers
-                .map(|l| format!("--max-layers={l}"))
-                .unwrap_or(String::from("--max-layers=128")),
-            format!("--arch={arch}"),
-            config_data
-                .iter()
-                .flat_map(|c| [OsStr::new("--image-config"), c.as_os_str()])
-                .map(|s| s.to_str())
-                .collect::<Option<Vec<_>>>()
-                .unwrap_or(Vec::new())
-                .join(" "),
-            commitid.clone(),
-            self.output,
-            manifest_data
-                .as_ref()
-                .iter()
-                .flat_map(|manifest| {
-                    [
-                        OsStr::new("--previous-build-manifest"),
-                        manifest.as_os_str(),
-                    ]
-                })
-                .map(|s| s.to_str().map(|s| s.to_string()))
-                .collect::<Option<Vec<_>>>()
-                .unwrap_or(Vec::new())
-                .join(" "),
-        ];
-        println!("rpm-ostree {:?}", args);
+        // let manifest_data_tmpfile = if let Some(manifest) = existing_manifest.as_ref() {
+        //     let mut tmpf = tempfile::NamedTempFile::new()?;
+        //     serde_json::to_writer(&mut tmpf, &manifest)?;
+        //     Some(tmpf)
+        // } else {
+        //     None
+        // };
+
 
         drop(rootfs);
         match rootfs_source {
@@ -251,10 +199,10 @@ impl BuildChunkedOCIOpts {
         }
 
         Ok(OstreeRepoFromContainerResult {
-            repodir: td,
+            repodir: TempDir::new().unwrap(),
             config_data,
             commitid,
-            manifest_data: manifest_data_tmpfile,
+            manifest_data: None,
         })
     }
 

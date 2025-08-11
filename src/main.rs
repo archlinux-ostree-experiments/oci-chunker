@@ -1,3 +1,4 @@
+mod chunking;
 mod pkgdb;
 mod rpm_ostree;
 

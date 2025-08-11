@@ -9,8 +9,9 @@ pub(crate) mod archlinux;
 pub(crate) mod rpm;
 
 pub(crate) mod cli;
+pub(crate) mod postprocessing;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Package {
     // Unique package identifier
     pub identifier: String,
