@@ -3,7 +3,12 @@ name = "oci-chunker"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+archlinux = ["alpm"]
+
 [dependencies]
+alpm = { version = "*", optional = true }
 anyhow = "1.0.98"
 camino = "1.1.10"
 cap-std = "3.4.4"

@@ -5,7 +5,9 @@ use std::{
     str::FromStr,
 };
 
-use crate::pkgdb::{Package, PackageDatabase};
+use camino::{Utf8Path, Utf8PathBuf};
+
+use crate::pkgdb::{Package, PackageDatabase, PackageDatabaseWithDefaultPath};
 
 const QUERY_FORMAT: &str = "%{nevra},%{name},%{version},%{sourcerpm},%{size}\\n";
 
@@ -71,7 +73,7 @@ impl RpmDb {
     }
 
     /// Queries the file list for a specific package identified by its NEVRA (Name-Epoch-Version-Release-Architecture).
-    fn query_files(&self, nevra: &str) -> Result<Vec<PathBuf>, anyhow::Error> {
+    fn query_files(&self, nevra: &str) -> Result<Vec<Utf8PathBuf>, anyhow::Error> {
         let child = Command::new("/usr/bin/rpm")
             .arg("--dbpath")
             .arg(self.database.clone())
@@ -85,8 +87,8 @@ impl RpmDb {
                 .ok_or(anyhow::Error::msg("rpm command had no stdout"))?,
         )
         .lines()
-        .map(|l| Ok(PathBuf::from_str(&l?)?))
-        .collect::<Result<Vec<PathBuf>, anyhow::Error>>()?;
+        .map(|l| Ok(Utf8PathBuf::from_str(&l?)?))
+        .collect::<Result<Vec<Utf8PathBuf>, anyhow::Error>>()?;
         Ok(files)
     }
 }
@@ -110,14 +112,17 @@ struct PackageRpmQa {
 }
 
 impl PackageRpmQa {
-    fn into_package<F: IntoIterator<Item = PathBuf>>(self, files: F) -> Package {
+    fn into_package<F: IntoIterator<Item = P>, P: AsRef<Utf8Path>>(self, files: F) -> Package {
         Package {
             identifier: self.identifier,
             name: self.name,
             version: self.version,
             source: self.source,
             size: self.size,
-            files: files.into_iter().collect(),
+            files: files
+                .into_iter()
+                .map(|p| p.as_ref().to_path_buf())
+                .collect(),
         }
     }
 }
@@ -132,6 +137,18 @@ impl PackageDatabase for RpmDb {
             })
             .collect()
     }
+
+    fn get_changes(&self, package: &Package) -> Result<Vec<u64>, anyhow::Error> {
+        todo!()
+    }
+
+    fn default_path(&self) -> Utf8PathBuf {
+        Utf8PathBuf::from_str(Self::DEFAULT_PATH).unwrap()
+    }
+}
+
+impl PackageDatabaseWithDefaultPath for RpmDb {
+    const DEFAULT_PATH: &'static str = "/usr/share/rpm";
 }
 
 #[cfg(test)]
