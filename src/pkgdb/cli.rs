@@ -1,7 +1,6 @@
 use std::{collections::HashMap, fs::File};
 
 use camino::{Utf8Path, Utf8PathBuf};
-use cap_std::fs_utf8::Dir;
 use chrono::Datelike;
 use clap::{Args, ValueEnum};
 
@@ -129,7 +128,8 @@ impl BuildPackageIndexOpts {
         )
     }
 
-    fn run_with_sysroot(&self, sysroot: Dir) -> Result<(), anyhow::Error> {
+    fn run_with_sysroot(&self, sysroot: &Utf8Path) -> Result<(), anyhow::Error> {
+        tracing::trace!("Running with sysroot {:?}", sysroot);
         // We use the current build time as an ID for the changelog, if it is not populated from the package database.
         let build_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -137,7 +137,7 @@ impl BuildPackageIndexOpts {
             .as_secs();
         let change_id = self.changelog_resolution.normalize(build_time);
         let backend = self.backend.get_backend(
-            &sysroot.canonicalize(".")?,
+            sysroot,
             self.pkgdb_path.as_ref().map(|p| p.as_ref()),
         )?;
         let packages = backend.get_packages()?;

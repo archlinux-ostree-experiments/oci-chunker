@@ -11,7 +11,10 @@ pub(crate) struct AlpmDb {
 
 impl AlpmDb {
     pub(crate) fn new(sysroot: &Utf8Path, db_path: &Utf8Path) -> Result<Self, anyhow::Error> {
-        let handle = Alpm::new(sysroot.as_str(), db_path.as_str())?;
+        tracing::trace!("Open pacman package database at sysroot {:?} and db_path {:?}", sysroot, db_path);
+        let full_db_path = sysroot.join(db_path);
+        tracing::trace!("Constructed full db path as {:?}", full_db_path);
+        let handle = Alpm::new(sysroot.as_str(), full_db_path.as_str())?;
         Ok(Self { handle })
     }
 
@@ -44,10 +47,6 @@ impl PackageDatabase for AlpmDb {
 
     fn get_changes(&self, _package: &Package) -> Result<Vec<u64>, anyhow::Error> {
         anyhow::bail!("Changes not implemented for AlpmDb");
-    }
-
-    fn default_path(&self) -> Utf8PathBuf {
-        Utf8PathBuf::from_str(Self::DEFAULT_PATH).unwrap()
     }
 }
 
