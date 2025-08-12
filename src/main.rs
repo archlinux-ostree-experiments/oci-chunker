@@ -34,21 +34,12 @@ struct CliArgs {
     subcommand: Subcommands,
 }
 
-async fn async_main() -> Result<(), tokio::task::JoinError> {
+async fn async_main() -> Result<(), anyhow::Error> {
     tokio::task::spawn_blocking(|| {
         let args = CliArgs::parse();
-        println!("{:#?}", args);
-        if let Err(e) = args.subcommand.run() {
-            eprintln!("ERROR!");
-            eprintln!("{:#?}", e);
-        }
-
-        let mut s = String::new();
-        std::io::stdin()
-            .read_line(&mut s)
-            .expect("Did not enter a correct string");
+        args.subcommand.run()
     })
-    .await
+    .await?
 }
 
 fn main() -> Result<(), anyhow::Error> {

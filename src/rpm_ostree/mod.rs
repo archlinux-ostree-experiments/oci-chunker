@@ -6,14 +6,12 @@ mod cmdutils;
 mod compose;
 mod containers_storage;
 
-use anyhow::Context;
-use camino::Utf8PathBuf;
-use cap_std::fs_utf8::Dir;
+use camino::{Utf8Path, Utf8PathBuf};
 use containers_storage::Mount;
 
 pub(crate) use compose::BuildChunkedOCIOpts;
 
-pub fn run_with_mount<F: FnOnce(Dir) -> Result<T, anyhow::Error>, T>(
+pub fn run_with_mount<F: FnOnce(&Utf8Path) -> Result<T, anyhow::Error>, T>(
     run_with_mount: F,
     rootfs: Option<Utf8PathBuf>,
     from: Option<String>,
@@ -40,8 +38,9 @@ pub fn run_with_mount<F: FnOnce(Dir) -> Result<T, anyhow::Error>, T>(
         FileSource::Rootfs(p) => p.as_path(),
         FileSource::Podman(mnt) => mnt.path(),
     };
-    let rootfs = Dir::open_ambient_dir(rootfs, cap_std::ambient_authority())
-        .with_context(|| format!("Opening {}", rootfs))?;
 
-    Ok(run_with_mount(rootfs)?)
+    let result = run_with_mount(rootfs)?;
+
+    drop(rootfs_source);
+    Ok(result)
 }

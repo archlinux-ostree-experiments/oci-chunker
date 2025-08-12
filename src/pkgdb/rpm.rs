@@ -40,6 +40,7 @@ pub struct RpmDb {
 impl RpmDb {
     /// Creates a new `RpmDb` instance pointing to the specified database path.
     pub fn new<P: AsRef<Path>>(database: P) -> Self {
+        tracing::trace!("Initialize RPM package database at path {:?}", database.as_ref());
         Self {
             database: database.as_ref().to_path_buf(),
         }
@@ -138,12 +139,8 @@ impl PackageDatabase for RpmDb {
             .collect()
     }
 
-    fn get_changes(&self, package: &Package) -> Result<Vec<u64>, anyhow::Error> {
+    fn get_changes(&self, _package: &Package) -> Result<Vec<u64>, anyhow::Error> {
         todo!()
-    }
-
-    fn default_path(&self) -> Utf8PathBuf {
-        Utf8PathBuf::from_str(Self::DEFAULT_PATH).unwrap()
     }
 }
 

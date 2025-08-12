@@ -99,9 +99,6 @@ pub trait PackageDatabase {
     fn get_packages(&self) -> Result<Vec<Package>, anyhow::Error>;
     /// If the package system supports it, return the unix timestamps of every package update/changelog entry.
     fn get_changes(&self, package: &Package) -> Result<Vec<u64>, anyhow::Error>;
-    /// Return the default path of the package database, relative to `sysroot`.
-    /// Needs to get a reference to self in order to keep the trait dyn-compatible.
-    fn default_path(&self) -> Utf8PathBuf;
 }
 
 pub trait PackageDatabaseWithDefaultPath: PackageDatabase {
