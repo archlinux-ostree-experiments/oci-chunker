@@ -1,4 +1,4 @@
-use std::{io::Read, path::PathBuf, str::FromStr};
+use std::str::FromStr;
 
 use alpm::{Alpm, Db};
 use camino::{Utf8Path, Utf8PathBuf};

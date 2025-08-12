@@ -13,6 +13,19 @@ enum Subcommands {
     BuildPackageIndex(BuildPackageIndexOpts),
 }
 
+impl Subcommands {
+    pub(crate) fn run(self) -> Result<(), anyhow::Error> {
+        match self {
+            Subcommands::BuildChunkedOCI(build_chunked_ociopts) => {
+                build_chunked_ociopts.run().map(|_res| ())
+            }
+            Subcommands::BuildPackageIndex(build_package_index_opts) => {
+                build_package_index_opts.run()
+            }
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 #[command(propagate_version = true)]
@@ -25,6 +38,10 @@ async fn async_main() -> Result<(), tokio::task::JoinError> {
     tokio::task::spawn_blocking(|| {
         let args = CliArgs::parse();
         println!("{:#?}", args);
+        if let Err(e) = args.subcommand.run() {
+            eprintln!("ERROR!");
+            eprintln!("{:#?}", e);
+        }
 
         let mut s = String::new();
         std::io::stdin()

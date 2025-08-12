@@ -189,7 +189,6 @@ impl BuildChunkedOCIOpts {
         //     None
         // };
 
-
         drop(rootfs);
         match rootfs_source {
             FileSource::Rootfs(_) => {}

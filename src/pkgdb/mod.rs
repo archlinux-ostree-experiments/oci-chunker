@@ -11,6 +11,8 @@ pub(crate) mod rpm;
 pub(crate) mod cli;
 pub(crate) mod postprocessing;
 
+pub(crate) const MAXIMUM_CHANGES: usize = 100;
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Package {
     // Unique package identifier
@@ -53,15 +55,25 @@ impl PackageIndex {
     ) -> Self {
         assert_eq!(package.name, previous_index.package.name);
         let mut changes = previous_index.changes;
-        if package.version != previous_index.package.version
-            || package.identifier != previous_index.package.identifier
-        {
+        let is_new_version = package.version != previous_index.package.version
+            || package.identifier != previous_index.package.identifier;
+        let is_new_build = changes.last().map(|last| *last != current_change).unwrap_or(true);
+        if is_new_version && is_new_build {
             changes.push(current_change);
+        }
+        let total_updates = if is_new_build {
+            previous_index.total_updates + 1
+        } else {
+            previous_index.total_updates
+        };
+        if changes.len() > MAXIMUM_CHANGES {
+            let remove = changes.len() - MAXIMUM_CHANGES;
+            let _ = changes.drain(0..remove);
         }
         Self {
             package,
             changes,
-            total_updates: previous_index.total_updates + 1,
+            total_updates,
         }
     }
 

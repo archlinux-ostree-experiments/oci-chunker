@@ -1,13 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
-    io::Read, path::Path,
+    io::Read,
+    path::Path,
 };
-
-use camino::Utf8PathBuf;
 use serde::Deserialize;
 
-use crate::pkgdb::{Package, PackageIndex};
+use crate::pkgdb::Package;
 
 pub fn extend_string_with_separator(original: &mut String, extend_with: &str, separator: char) {
     if original.len() == 0 {

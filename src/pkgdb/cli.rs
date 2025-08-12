@@ -2,12 +2,16 @@ use std::{collections::HashMap, fs::File};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use cap_std::fs_utf8::Dir;
-use clap::{Args, Parser, ValueEnum};
+use chrono::Datelike;
+use clap::{Args, ValueEnum};
 
 #[cfg(feature = "archlinux")]
 use crate::pkgdb::archlinux::AlpmDb;
 use crate::{
-    pkgdb::{postprocessing::Postprocessing, rpm::RpmDb, PackageDatabase, PackageDatabaseWithDefaultPath, PackageIndex},
+    pkgdb::{
+        PackageDatabase, PackageDatabaseWithDefaultPath, PackageIndex,
+        postprocessing::Postprocessing, rpm::RpmDb,
+    },
     rpm_ostree::run_with_mount,
 };
 
@@ -49,6 +53,31 @@ pub(crate) enum ChangelogResolution {
     Daily,
     Weekly,
     Monthly,
+    Exact,
+}
+
+impl ChangelogResolution {
+    pub(crate) fn normalize(&self, timestamp: u64) -> u64 {
+        // Safety: This will not fail for sane unix timestamps.
+        // Let's see how this works out in practice using package manager outputs.
+        let datetime =
+            chrono::DateTime::from_timestamp(i64::try_from(timestamp).unwrap(), 0).unwrap();
+        match self {
+            ChangelogResolution::Daily => {
+                u64::try_from(datetime.year()).unwrap() * 10000
+                    + u64::from(datetime.month()) * 100
+                    + u64::from(datetime.day())
+            }
+            ChangelogResolution::Weekly => {
+                u64::try_from(datetime.iso_week().year()).unwrap() * 100
+                    + u64::from(datetime.iso_week().week0())
+            }
+            ChangelogResolution::Monthly => {
+                u64::try_from(datetime.year()).unwrap() * 100 + u64::from(datetime.month0())
+            }
+            ChangelogResolution::Exact => timestamp,
+        }
+    }
 }
 
 #[derive(Args, Debug)]
@@ -84,7 +113,7 @@ pub(crate) struct BuildPackageIndexOpts {
     #[clap(
         long,
         required = false,
-        help = "YAML file with postprocessing information (add and merge packages)"
+        help = "TOML file with postprocessing information (add and merge packages)"
     )]
     pub postprocessing: Option<Utf8PathBuf>,
     #[clap(long, required = false)]
@@ -106,23 +135,37 @@ impl BuildPackageIndexOpts {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
+        let change_id = self.changelog_resolution.normalize(build_time);
         let backend = self.backend.get_backend(
             &sysroot.canonicalize(".")?,
             self.pkgdb_path.as_ref().map(|p| p.as_ref()),
         )?;
         let packages = backend.get_packages()?;
+        tracing::debug!("Obtained {} packages from database", packages.len());
         let packages = match self.postprocessing {
             Some(ref postprocessing_path) => {
                 let postprocessing = Postprocessing::new_from_toml(postprocessing_path)?;
                 postprocessing.apply(packages)?
             }
-            None => packages
+            None => packages,
         };
+        tracing::debug!("There are {} packages after postprocessing", packages.len());
         let packages = match self.changelog_source {
             ChangelogSource::PackageDatabase => packages
                 .into_iter()
                 .map(|package| -> Result<PackageIndex, anyhow::Error> {
                     let changelog = backend.get_changes(&package)?;
+                    let skip = if changelog.len() <= super::MAXIMUM_CHANGES {
+                        0
+                    } else {
+                        changelog.len() - super::MAXIMUM_CHANGES
+                    };
+                    let changelog = changelog
+                        .into_iter()
+                        .skip(skip)
+                        .take(super::MAXIMUM_CHANGES)
+                        .map(|change| self.changelog_resolution.normalize(change))
+                        .collect::<Vec<u64>>();
                     let changelog_len = u32::try_from(changelog.len()).unwrap();
                     Ok(PackageIndex::new(package, changelog, changelog_len))
                 })
@@ -149,18 +192,23 @@ impl BuildPackageIndexOpts {
                         let previous_version = previous_package_metadata.remove(&package.name);
                         match previous_version {
                             Some(metadata) => PackageIndex::update_from_previous_index(
-                                package, metadata, build_time,
+                                package, metadata, change_id,
                             ),
-                            None => PackageIndex::initialize(package, build_time),
+                            None => PackageIndex::initialize(package, change_id),
                         }
                     })
                     .collect()
             }
             ChangelogSource::Initialize => packages
                 .into_iter()
-                .map(|package| PackageIndex::initialize(package, build_time))
+                .map(|package| PackageIndex::initialize(package, change_id))
                 .collect(),
         };
+        tracing::trace!("Changelog created");
+        if let Some(output_package_index) = &self.output_package_index {
+            serde_json::to_writer(File::create_new(output_package_index)?, &packages)?;
+            tracing::trace!("Package Index written to disk");
+        }
         Ok(())
     }
 }
