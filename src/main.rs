@@ -1,37 +1,45 @@
+mod chunking;
+mod pkgdb;
 mod rpm_ostree;
-use clap::Parser;
-use ostree_ext::containers_image_proxy;
+
+use clap::{Parser, Subcommand};
 use rpm_ostree::*;
 
-// #[tokio::main]
-// async fn main() -> Result<(), anyhow::Error> {
-//     tracing_subscriber::fmt()
-//         .with_max_level(tracing::Level::TRACE)
-//         .with_target(false)
-//         .init();
-//     let builder = BuildChunkedOCIOpts::parse();
-//     {
-//         let proxy = containers_image_proxy::ImageProxy::new().await?;
-//         let image = proxy.open_image("docker://ghcr.io/archlinux-ostree-experiments/archlinux-bootc:main").await?;
-//         println!("Image: {:?}", image);
-//         drop(image);
-//         drop(proxy);
-//     }
-//     builder.run().unwrap();
-//     Ok(())
-// }
+use crate::pkgdb::cli::BuildPackageIndexOpts;
 
-async fn async_main() -> Result<(), tokio::task::JoinError> {
+#[derive(Debug, Subcommand)]
+enum Subcommands {
+    BuildChunkedOCI(BuildChunkedOCIOpts),
+    BuildPackageIndex(BuildPackageIndexOpts),
+}
+
+impl Subcommands {
+    pub(crate) fn run(self) -> Result<(), anyhow::Error> {
+        match self {
+            Subcommands::BuildChunkedOCI(build_chunked_ociopts) => {
+                build_chunked_ociopts.run().map(|_res| ())
+            }
+            Subcommands::BuildPackageIndex(build_package_index_opts) => {
+                build_package_index_opts.run()
+            }
+        }
+    }
+}
+
+#[derive(Debug, Parser)]
+#[command(version, about, long_about = None)]
+#[command(propagate_version = true)]
+struct CliArgs {
+    #[command(subcommand)]
+    subcommand: Subcommands,
+}
+
+async fn async_main() -> Result<(), anyhow::Error> {
     tokio::task::spawn_blocking(|| {
-        let repo = BuildChunkedOCIOpts::parse().run().unwrap();
-        println!("repo: {:?}", repo);
-
-        let mut s = String::new();
-        std::io::stdin()
-            .read_line(&mut s)
-            .expect("Did not enter a correct string");
+        let args = CliArgs::parse();
+        args.subcommand.run()
     })
-    .await
+    .await?
 }
 
 fn main() -> Result<(), anyhow::Error> {
@@ -43,6 +51,5 @@ fn main() -> Result<(), anyhow::Error> {
         .enable_all()
         .build()?;
     runtime.block_on(async_main())?;
-    //BuildChunkedOCIOpts::parse().run()?;
     Ok(())
 }

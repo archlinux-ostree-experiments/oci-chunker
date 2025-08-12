@@ -3,7 +3,12 @@ name = "oci-chunker"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+archlinux = ["dep:alpm"]
+
 [dependencies]
+alpm = { version = "*", features = ["static"], optional = true }
 anyhow = "1.0.98"
 camino = "1.1.10"
 cap-std = "3.4.4"
@@ -18,5 +23,6 @@ serde = "1.0.219"
 serde_json = "1.0.141"
 tempfile = "3.20.0"
 tokio = { version = "1.47.0", features = ["rt-multi-thread"] }
+toml = "0.9.5"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"

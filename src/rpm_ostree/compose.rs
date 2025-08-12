@@ -2,10 +2,7 @@
 
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use std::ffi::OsStr;
-use std::num::NonZeroU32;
 use std::os::fd::{AsFd, AsRawFd};
-use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, anyhow};
@@ -13,15 +10,12 @@ use camino::Utf8PathBuf;
 use cap_std::fs::{Dir, MetadataExt};
 use clap::Parser;
 use fn_error_context::context;
-use oci_spec::image::ImageManifest;
 use ostree::gio;
-use ostree_ext::containers_image_proxy;
 use ostree_ext::glib::prelude::*;
 use ostree_ext::oci_spec::image::ImageConfiguration;
 use ostree_ext::ostree::MutableTree;
 use ostree_ext::{container as ostree_container, glib};
 use ostree_ext::{oci_spec, ostree};
-use tempfile::{NamedTempFile, TempDir, TempPath};
 
 use crate::rpm_ostree::cmdutils::CommandRunExt;
 use crate::rpm_ostree::containers_storage::Mount;
@@ -54,32 +48,6 @@ impl From<OutputFormat> for ostree_container::Transport {
     }
 }
 
-#[derive(Debug)]
-pub struct OstreeRepoFromContainerResult {
-    repodir: TempDir,
-    config_data: Option<TempPath>,
-    commitid: String,
-    manifest_data: Option<NamedTempFile>,
-}
-
-impl OstreeRepoFromContainerResult {
-    pub fn repodir(&self) -> PathBuf {
-        self.repodir.path().to_path_buf()
-    }
-
-    pub fn config_data(&self) -> Option<PathBuf> {
-        self.config_data.as_ref().map(|t| t.to_path_buf())
-    }
-
-    pub fn commitid(&self) -> &str {
-        &self.commitid
-    }
-
-    pub fn manifest_data(&self) -> Option<PathBuf> {
-        self.manifest_data.as_ref().map(|s| s.path().to_path_buf())
-    }
-}
-
 /// Generate a "chunked" OCI archive from an input rootfs.
 #[derive(Debug, Parser)]
 pub(crate) struct BuildChunkedOCIOpts {
@@ -91,33 +59,20 @@ pub(crate) struct BuildChunkedOCIOpts {
     #[clap(long, required_unless_present = "rootfs")]
     from: Option<String>,
 
-    #[clap(long)]
-    /// Maximum number of layers to use. The default value of 64 is chosen to
-    /// balance splitting up an image into sufficient chunks versus
-    /// compatibility with older OCI runtimes that may have problems
-    /// with larger number of layers.
-    /// However, with recent podman 5 for example with newer overlayfs,
-    /// it works to use over 200 layers.
-    max_layers: Option<NonZeroU32>,
-
-    /// Tag to use for output image, or `latest` if unset.
-    #[clap(long, default_value = "latest")]
-    reference: String,
-
     /// Output image reference, in TRANSPORT:TARGET syntax.
     /// For example, `containers-storage:localhost/exampleos` or `oci:/path/to/ocidir`.
     #[clap(long, required = true)]
-    output: String,
+    output: Utf8PathBuf,
 }
 
 impl BuildChunkedOCIOpts {
-    pub(crate) fn run(self) -> Result<OstreeRepoFromContainerResult> {
+    pub(crate) fn run(self) -> Result<String> {
         enum FileSource {
             Rootfs(Utf8PathBuf),
             Podman(Mount),
         }
 
-        let existing_manifest = self.check_existing_image(&self.output)?;
+        //let existing_manifest = self.check_existing_image(&self.output)?;
 
         let rootfs_source = if let Some(rootfs) = self.rootfs {
             FileSource::Rootfs(rootfs)
@@ -158,21 +113,15 @@ impl BuildChunkedOCIOpts {
                 config.set_created(Some(toplevel_ts));
                 config
             };
-        let arch = image_config.architecture();
         let creation_timestamp = image_config
             .created()
             .as_deref()
             .map(chrono::DateTime::parse_from_rfc3339)
             .transpose()?;
 
-        // Allocate a working temporary directory
-        let td = tempfile::tempdir_in("/var/tmp")?;
-
-        // Note: In a format v2, we'd likely not use ostree.
-        let repo_path: Utf8PathBuf = td.path().join("repo").try_into()?;
         let repo = ostree::Repo::create_at(
             libc::AT_FDCWD,
-            repo_path.as_str(),
+            self.output.as_str(),
             ostree::RepoMode::BareUser,
             None,
             gio::Cancellable::NONE,
@@ -186,62 +135,6 @@ impl BuildChunkedOCIOpts {
         let commitid =
             generate_commit_from_rootfs(&repo, &rootfs, modifier, creation_timestamp.as_ref())?;
 
-        let label_arg = ["--label", "containers.bootc=1"].as_slice();
-        let base_config = image_config
-            .config()
-            .as_ref()
-            .filter(|_| self.from.is_some());
-        let config_data = if let Some(config) = base_config {
-            let mut tmpf = tempfile::NamedTempFile::new()?;
-            serde_json::to_writer(&mut tmpf, &config)?;
-            Some(tmpf.into_temp_path())
-        } else {
-            None
-        };
-
-        let manifest_data_tmpfile = if let Some(manifest) = existing_manifest.as_ref() {
-            let mut tmpf = tempfile::NamedTempFile::new()?;
-            serde_json::to_writer(&mut tmpf, &manifest)?;
-            Some(tmpf)
-        } else {
-            None
-        };
-        let manifest_data = manifest_data_tmpfile.as_ref().map(|t| t.path());
-        let args: [String; 11] = [
-            "compose".to_string(),
-            "container-encapsulate".to_string(),
-            "--repo".to_string(),
-            repo_path.to_string(),
-            label_arg.join(" "),
-            self.max_layers
-                .map(|l| format!("--max-layers={l}"))
-                .unwrap_or(String::from("--max-layers=128")),
-            format!("--arch={arch}"),
-            config_data
-                .iter()
-                .flat_map(|c| [OsStr::new("--image-config"), c.as_os_str()])
-                .map(|s| s.to_str())
-                .collect::<Option<Vec<_>>>()
-                .unwrap_or(Vec::new())
-                .join(" "),
-            commitid.clone(),
-            self.output,
-            manifest_data
-                .as_ref()
-                .iter()
-                .flat_map(|manifest| {
-                    [
-                        OsStr::new("--previous-build-manifest"),
-                        manifest.as_os_str(),
-                    ]
-                })
-                .map(|s| s.to_str().map(|s| s.to_string()))
-                .collect::<Option<Vec<_>>>()
-                .unwrap_or(Vec::new())
-                .join(" "),
-        ];
-        println!("rpm-ostree {:?}", args);
-
         drop(rootfs);
         match rootfs_source {
             FileSource::Rootfs(_) => {}
@@ -250,69 +143,7 @@ impl BuildChunkedOCIOpts {
             }
         }
 
-        Ok(OstreeRepoFromContainerResult {
-            repodir: td,
-            config_data,
-            commitid,
-            manifest_data: manifest_data_tmpfile,
-        })
-    }
-
-    /// Check if there's already an image at the target location and if it's chunked
-    fn check_existing_image(&self, output: &str) -> Result<Option<oci_spec::image::ImageManifest>> {
-        // Parse the output reference to determine transport and location
-        let (_transport, _location) = output
-            .split_once(':')
-            .ok_or_else(|| anyhow::anyhow!("Invalid output format, expected TRANSPORT:TARGET"))?;
-
-        let handle = tokio::runtime::Handle::current();
-        let result: Option<oci_spec::image::ImageManifest> = handle.block_on(async {
-            // Create image proxy without specific authfile config since BuildChunkedOCIOpts doesn't have authfile field
-            // The proxy will use default authentication sources (e.g., $XDG_RUNTIME_DIR/containers/auth.json)
-            let proxy = containers_image_proxy::ImageProxy::new().await?;
-
-            tracing::debug!("Open Image: {}", output);
-            // Try to open the image
-            let img = proxy
-                .open_image_optional(output)
-                .await
-                .map_err(|e| tracing::warn!("Failed to open output image: {}", e))
-                .ok()
-                .flatten();
-
-            if let Some(opened_image) = img {
-                // Fetch the manifest
-                let (_, manifest) = proxy.fetch_manifest(&opened_image).await?;
-                anyhow::Ok(Some(manifest))
-            } else {
-                // Image doesn't exist
-                anyhow::Ok(None)
-            }
-        })?;
-
-        if let Some(manifest) = result {
-            // Check if all layers have ostree.components annotation (skip first layer)
-            let is_chunked = manifest.layers().iter().skip(1).all(|layer| {
-                layer
-                    .annotations()
-                    .as_ref()
-                    .and_then(|annotations| annotations.get("ostree.components"))
-                    .is_some()
-            });
-
-            if is_chunked {
-                println!("Found existing chunked image at target, will use as baseline");
-                Ok(Some(manifest))
-            } else {
-                println!(
-                    "Found existing image at target but it's not chunked, will create new image"
-                );
-                Ok(None)
-            }
-        } else {
-            // Image doesn't exist, return None
-            Ok(None)
-        }
+        Ok(commitid)
     }
 }
 
