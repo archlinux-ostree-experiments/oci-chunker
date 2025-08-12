@@ -5,10 +5,10 @@ edition = "2024"
 
 [features]
 default = []
-archlinux = ["alpm"]
+archlinux = ["dep:alpm"]
 
 [dependencies]
-alpm = { version = "*", optional = true }
+alpm = { version = "*", features = ["static"], optional = true }
 anyhow = "1.0.98"
 camino = "1.1.10"
 cap-std = "3.4.4"
