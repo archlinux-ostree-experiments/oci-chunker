@@ -1,26 +1,31 @@
 mod chunking;
 mod pkgdb;
 mod rpm_ostree;
+mod util;
 
 use clap::{Parser, Subcommand};
 use rpm_ostree::*;
 
-use crate::pkgdb::cli::BuildPackageIndexOpts;
+use crate::{chunking::cli::GenerateChunkedOCIOpts, pkgdb::cli::BuildPackageIndexOpts};
 
 #[derive(Debug, Subcommand)]
 enum Subcommands {
-    BuildChunkedOCI(BuildChunkedOCIOpts),
+    GenerateOstreeRepo(BuildChunkedOCIOpts),
     BuildPackageIndex(BuildPackageIndexOpts),
+    GenerateChunkedOCI(GenerateChunkedOCIOpts),
 }
 
 impl Subcommands {
     pub(crate) fn run(self) -> Result<(), anyhow::Error> {
         match self {
-            Subcommands::BuildChunkedOCI(build_chunked_ociopts) => {
+            Subcommands::GenerateOstreeRepo(build_chunked_ociopts) => {
                 build_chunked_ociopts.run().map(|_res| ())
             }
             Subcommands::BuildPackageIndex(build_package_index_opts) => {
                 build_package_index_opts.run()
+            }
+            Subcommands::GenerateChunkedOCI(generate_chunked_ociopts) => {
+                generate_chunked_ociopts.run()
             }
         }
     }

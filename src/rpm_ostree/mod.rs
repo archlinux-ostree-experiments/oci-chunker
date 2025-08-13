@@ -4,12 +4,15 @@
 
 mod cmdutils;
 mod compose;
+mod container;
 mod containers_storage;
+mod fsutil;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use containers_storage::Mount;
 
 pub(crate) use compose::BuildChunkedOCIOpts;
+pub(crate) use container::*;
 
 pub fn run_with_mount<F: FnOnce(&Utf8Path) -> Result<T, anyhow::Error>, T>(
     run_with_mount: F,

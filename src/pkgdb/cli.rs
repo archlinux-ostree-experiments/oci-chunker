@@ -12,6 +12,7 @@ use crate::{
         postprocessing::Postprocessing, rpm::RpmDb,
     },
     rpm_ostree::run_with_mount,
+    util::get_buildtime,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -79,6 +80,7 @@ impl ChangelogResolution {
     }
 }
 
+/// Generate a Package Index from an input rootfs or container image.
 #[derive(Args, Debug)]
 pub(crate) struct BuildPackageIndexOpts {
     #[clap(long, required = false, default_value = "rpm")]
@@ -131,15 +133,11 @@ impl BuildPackageIndexOpts {
     fn run_with_sysroot(&self, sysroot: &Utf8Path) -> Result<(), anyhow::Error> {
         tracing::trace!("Running with sysroot {:?}", sysroot);
         // We use the current build time as an ID for the changelog, if it is not populated from the package database.
-        let build_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let build_time = get_buildtime();
         let change_id = self.changelog_resolution.normalize(build_time);
-        let backend = self.backend.get_backend(
-            sysroot,
-            self.pkgdb_path.as_ref().map(|p| p.as_ref()),
-        )?;
+        let backend = self
+            .backend
+            .get_backend(sysroot, self.pkgdb_path.as_ref().map(|p| p.as_ref()))?;
         let packages = backend.get_packages()?;
         tracing::debug!("Obtained {} packages from database", packages.len());
         let packages = match self.postprocessing {

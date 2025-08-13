@@ -40,7 +40,10 @@ pub struct RpmDb {
 impl RpmDb {
     /// Creates a new `RpmDb` instance pointing to the specified database path.
     pub fn new<P: AsRef<Path>>(database: P) -> Self {
-        tracing::trace!("Initialize RPM package database at path {:?}", database.as_ref());
+        tracing::trace!(
+            "Initialize RPM package database at path {:?}",
+            database.as_ref()
+        );
         Self {
             database: database.as_ref().to_path_buf(),
         }

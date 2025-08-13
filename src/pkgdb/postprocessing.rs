@@ -1,10 +1,10 @@
+use serde::Deserialize;
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
     io::Read,
     path::Path,
 };
-use serde::Deserialize;
 
 use crate::pkgdb::Package;
 
@@ -95,7 +95,7 @@ impl Postprocessing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_deserialize_postprocessing() {
         let toml_str = r#"

@@ -11,7 +11,11 @@ pub(crate) struct AlpmDb {
 
 impl AlpmDb {
     pub(crate) fn new(sysroot: &Utf8Path, db_path: &Utf8Path) -> Result<Self, anyhow::Error> {
-        tracing::trace!("Open pacman package database at sysroot {:?} and db_path {:?}", sysroot, db_path);
+        tracing::trace!(
+            "Open pacman package database at sysroot {:?} and db_path {:?}",
+            sysroot,
+            db_path
+        );
         let full_db_path = sysroot.join(db_path);
         tracing::trace!("Constructed full db path as {:?}", full_db_path);
         let handle = Alpm::new(sysroot.as_str(), full_db_path.as_str())?;

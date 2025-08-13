@@ -57,7 +57,10 @@ impl PackageIndex {
         let mut changes = previous_index.changes;
         let is_new_version = package.version != previous_index.package.version
             || package.identifier != previous_index.package.identifier;
-        let is_new_build = changes.last().map(|last| *last != current_change).unwrap_or(true);
+        let is_new_build = changes
+            .last()
+            .map(|last| *last != current_change)
+            .unwrap_or(true);
         if is_new_version && is_new_build {
             changes.push(current_change);
         }

@@ -12,6 +12,7 @@ alpm = { version = "*", features = ["static"], optional = true }
 anyhow = "1.0.98"
 camino = "1.1.10"
 cap-std = "3.4.4"
+cap-std-ext = "4.0.6"
 chrono = "0.4.41"
 clap = { version = "4.5.42", features = ["derive"] }
 fn-error-context = "0.2.0"

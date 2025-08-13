@@ -48,7 +48,7 @@ impl From<OutputFormat> for ostree_container::Transport {
     }
 }
 
-/// Generate a "chunked" OCI archive from an input rootfs.
+/// Generate an OSTree repo and commit from an input rootfs.
 #[derive(Debug, Parser)]
 pub(crate) struct BuildChunkedOCIOpts {
     /// Path to the source root filesystem tree.
@@ -143,6 +143,8 @@ impl BuildChunkedOCIOpts {
             }
         }
 
+        println!("Commit generated successfully. Commit ID:");
+        println!("{}", commitid);
         Ok(commitid)
     }
 }
