@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs::File};
 
 use camino::{Utf8Path, Utf8PathBuf};
-use chrono::{Datelike, Timelike};
+use chrono::Datelike;
 use clap::{Args, ValueEnum};
 
 #[cfg(feature = "archlinux")]
