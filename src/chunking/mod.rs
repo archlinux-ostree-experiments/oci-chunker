@@ -1,3 +1,5 @@
+use std::num::NonZero;
+
 use camino::Utf8Path;
 use ostree_ext::chunking::ObjectMetaSized;
 
@@ -10,7 +12,7 @@ pub(crate) trait Chunker {
     fn chunk(
         &mut self,
         packages: &Vec<PackageIndex>,
-        max_layers: usize,
+        max_layers: NonZero<u32>,
         repo: &Utf8Path,
         commit: &str,
     ) -> Result<ObjectMetaSized, anyhow::Error>;

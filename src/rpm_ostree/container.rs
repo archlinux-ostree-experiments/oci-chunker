@@ -36,14 +36,14 @@ use crate::util::get_buildtime;
 pub struct ContainerEncapsulateOpts {
     #[clap(long)]
     #[clap(value_parser)]
-    repo: Utf8PathBuf,
+    pub repo: Utf8PathBuf,
 
     /// OSTree branch name or checksum
-    ostree_ref: String,
+    pub ostree_ref: String,
 
     /// Image reference, e.g. registry:quay.io/exampleos/exampleos:latest
     #[clap(value_parser = ostree_ext::cli::parse_base_imgref)]
-    imgref: ImageReference,
+    pub imgref: ImageReference,
 
     /// Additional labels for the container
     #[clap(name = "label", long, short)]
@@ -72,7 +72,7 @@ pub struct ContainerEncapsulateOpts {
 
     /// Maximum number of container image layers
     #[clap(long)]
-    max_layers: Option<NonZeroU32>,
+    pub max_layers: Option<NonZeroU32>,
 
     #[clap(long)]
     /// Output content metadata as JSON
@@ -258,9 +258,9 @@ pub fn generate_mapping(
         state.rpmsize += pkg.package.size;
     }
 
-    // SAFETY: There must be at least one package; checked above.
+    // SAFETY: There must be at least one package
     let (lowest_change_name, lowest_change_time) =
-        lowest_change_time.expect("Failed to find any packages");
+        lowest_change_time.ok_or(anyhow::Error::msg("Failed to find any packages"))?;
 
     // Walk over the packages, and generate the `packagemeta` mapping, which is basically a subset of
     // package metadata abstracted for ostree.  Note that right now, the package metadata includes
@@ -428,7 +428,7 @@ pub fn container_encapsulate(
     let copy_meta_opt_keys = opt
         .copy_meta_opt_keys
         .into_iter()
-        .chain(std::iter::once("chunker.inputhash".to_owned()))
+        .chain(std::iter::once("rpmostree.inputhash".to_owned()))
         .collect();
 
     let config = Config {
