@@ -2,6 +2,8 @@
 
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use std::fs::File;
+use std::io::Write;
 use std::os::fd::{AsFd, AsRawFd};
 use std::process::Command;
 
@@ -59,10 +61,13 @@ pub(crate) struct BuildChunkedOCIOpts {
     #[clap(long, required_unless_present = "rootfs")]
     from: Option<String>,
 
-    /// Output image reference, in TRANSPORT:TARGET syntax.
-    /// For example, `containers-storage:localhost/exampleos` or `oci:/path/to/ocidir`.
+    /// OSTree output repository
     #[clap(long, required = true)]
     output: Utf8PathBuf,
+
+    /// Write the commit id to this file after successfully creating the OSTree repository
+    #[clap(long, required = true)]
+    output_commitid: Option<Utf8PathBuf>,
 }
 
 impl BuildChunkedOCIOpts {
@@ -145,6 +150,12 @@ impl BuildChunkedOCIOpts {
 
         println!("Commit generated successfully. Commit ID:");
         println!("{}", commitid);
+
+        if let Some(commit_outpath) = self.output_commitid {
+            let mut file = File::create(commit_outpath)?;
+            write!(&mut file, "{}", commitid)?;
+        }
+
         Ok(commitid)
     }
 }
