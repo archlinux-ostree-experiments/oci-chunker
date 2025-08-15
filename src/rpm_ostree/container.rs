@@ -379,7 +379,27 @@ pub fn generate_mapping(
             .unwrap()
     );
     println!("Duplicates: {}", state.duplicate_objects().count());
+    for (contentid, paths) in state.duplicate_objects() {
+        tracing::trace!(
+            "{} is associated with multiple files:\n{}",
+            contentid,
+            paths
+                .iter()
+                .fold((String::new(), true), |(mut out, is_first), path| {
+                    if !is_first {
+                        out.push_str("\n");
+                    }
+                    out.push_str(&format!("- {}", path));
+                    (out, false)
+                })
+                .0
+        );
+    }
+
     println!("Multiple owners: {}", state.multiple_owners().count());
+    for (path, owners) in state.multiple_owners() {
+        tracing::trace!("{} is owned by {:?}", path, owners);
+    }
 
     // Convert our build state into the state that ostree consumes, discarding
     // transient data such as the cases of files owned by multiple packages.
