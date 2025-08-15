@@ -202,8 +202,7 @@ impl BuildPackageIndexOpts {
                         .take(super::MAXIMUM_CHANGES)
                         .map(|change| self.changelog_resolution.normalize(change))
                         .collect::<Result<Vec<u64>, _>>()?;
-                    let changelog_len = u32::try_from(changelog.len()).unwrap();
-                    Ok(PackageIndex::new(package, changelog, changelog_len))
+                    Ok(PackageIndex::new(package, changelog))
                 })
                 .collect::<Result<Vec<PackageIndex>, anyhow::Error>>()?,
             ChangelogSource::PreviousIndex => {

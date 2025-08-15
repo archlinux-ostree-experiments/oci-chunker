@@ -281,7 +281,7 @@ pub fn generate_mapping(
             name: Rc::from(pkg.package.name.as_str()),
             srcid: Rc::from(pkg.package.source.as_str()),
             change_time_offset,
-            change_frequency: pkg.total_updates,
+            change_frequency: pkg.change_frequency(),
         });
     }
 

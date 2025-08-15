@@ -1,4 +1,9 @@
-use std::{hash::Hash, rc::Rc};
+use std::{
+    collections::{BTreeSet, HashSet},
+    hash::Hash,
+    ops::Div,
+    rc::Rc,
+};
 
 use camino::Utf8PathBuf;
 use ostree_ext::{chunking::ObjectSourceMetaSized, objectsource::ObjectSourceMeta};
@@ -31,7 +36,7 @@ pub struct Package {
     pub size: u64,
 
     // List of files
-    pub files: Vec<Utf8PathBuf>,
+    pub files: HashSet<Utf8PathBuf>,
 }
 
 impl Hash for Package {
@@ -43,8 +48,7 @@ impl Hash for Package {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PackageIndex {
     pub package: Package,
-    pub changes: Vec<u64>,
-    pub total_updates: u32,
+    pub changes: BTreeSet<u64>,
 }
 
 impl PackageIndex {
@@ -62,38 +66,53 @@ impl PackageIndex {
             .map(|last| *last != current_change)
             .unwrap_or(true);
         if is_new_version && is_new_build {
-            changes.push(current_change);
+            changes.insert(current_change);
         }
-        let total_updates = if is_new_build {
-            previous_index.total_updates + 1
-        } else {
-            previous_index.total_updates
-        };
-        if changes.len() > MAXIMUM_CHANGES {
-            let remove = changes.len() - MAXIMUM_CHANGES;
-            let _ = changes.drain(0..remove);
+        while changes.len() > MAXIMUM_CHANGES {
+            let _ = changes.pop_first();
         }
-        Self {
-            package,
-            changes,
-            total_updates,
-        }
+        Self { package, changes }
     }
 
     pub fn initialize(package: Package, current_change: u64) -> Self {
         Self {
             package,
-            changes: vec![current_change],
-            total_updates: 1,
+            changes: BTreeSet::from_iter([current_change]),
         }
     }
 
-    pub fn new(package: Package, changes: Vec<u64>, total_updates: u32) -> Self {
+    pub fn new<I: IntoIterator<Item = u64>>(package: Package, changes: I) -> Self {
         Self {
             package,
-            changes,
-            total_updates,
+            changes: BTreeSet::from_iter(changes),
         }
+    }
+
+    pub fn change_frequency(&self) -> u32 {
+        if self.changes.len() < 2 {
+            return 0;
+        }
+
+        // Sum over the time differences of changes
+        let diff = self
+            .changes
+            .iter()
+            .fold((0u64, None), |(sum, last_element), current| {
+                if let Some(last) = last_element {
+                    (sum + (current - last), Some(current))
+                } else {
+                    (0, Some(current))
+                }
+            })
+            .0;
+
+        // Calculate the avg. time differences between package updates
+        // Safety: Updates are expensive enough, that no one will want to have more than u64::MAX of them over an entire lifetime.
+        // Actually, when updating from a previous index, it can never get larger than `MAXIMUM_CHANGES`.
+        let avg = diff.div(u64::try_from(self.changes.len() - 1).unwrap());
+
+        // Safety: We assume that the "average package" updates more frequently than every 60+ years.
+        u32::try_from(avg).unwrap()
     }
 }
 
@@ -119,32 +138,6 @@ impl From<Package> for ObjectSourceMetaSized {
                 change_frequency: 0,
             },
             size: value.size,
-        }
-    }
-}
-
-impl From<PackageIndex> for ObjectSourceMetaSized {
-    fn from(value: PackageIndex) -> Self {
-        ObjectSourceMetaSized {
-            meta: ObjectSourceMeta {
-                identifier: Rc::from(value.package.identifier),
-                name: Rc::from(value.package.name),
-                srcid: Rc::from(value.package.source),
-                change_time_offset: if value.changes.len() >= 2 {
-                    // Safety depends on the concrete measure of time, i.e. if u64 unix timestamps are used,
-                    // this could overflow. However, we're talking about time differences, so this shouldn't be problematic.
-                    // Even when measured in seconds, the delta is > 60 years, so this is going to be someone else's problem ;-)
-                    u32::try_from(
-                        value.changes[value.changes.len() - 1]
-                            - value.changes[value.changes.len() - 2],
-                    )
-                    .unwrap()
-                } else {
-                    0
-                },
-                change_frequency: u32::try_from(value.changes.len()).unwrap(),
-            },
-            size: value.package.size,
         }
     }
 }

@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs::File,
     io::Read,
     path::Path,
@@ -68,19 +68,16 @@ impl Postprocessing {
                             merged_package.size += package.size;
                             // Take all files from the merged package.
                             // This will empty the files list, which is fine, because we will remove it later, anyway
-                            merged_package.files.extend(package.files.drain(..));
+                            merged_package.files = merged_package
+                                .files
+                                .union(&package.files)
+                                .cloned()
+                                .collect();
                             (indices, merged_package)
                         },
                     );
                 // Set the name of the merged package as indicated by the user
                 merged_package.name = new_name;
-                // Files are deduplicated before merging
-                merged_package.files = merged_package
-                    .files
-                    .into_iter()
-                    .collect::<HashSet<_>>()
-                    .into_iter()
-                    .collect();
                 // Delete the packages that were just merged from the index
                 for i in 0..indices.len() {
                     let _ = index.remove(indices[i] - i);
@@ -94,6 +91,10 @@ impl Postprocessing {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use camino::Utf8PathBuf;
+
     use super::*;
 
     #[test]
@@ -129,10 +130,9 @@ files = [
         assert_eq!(pkgs[0].source, "initramfs");
         assert_eq!(pkgs[0].size, 209715200);
         assert_eq!(pkgs[0].files.len(), 1);
-        assert_eq!(
-            pkgs[0].files[0].as_str(),
-            "/usr/lib/modules/6.15.9-arch1-1/initramfs.img"
-        );
+        assert!(pkgs[0].files.contains(
+            &Utf8PathBuf::from_str("/usr/lib/modules/6.15.9-arch1-1/initramfs.img").unwrap()
+        ));
 
         // Validate merge_packages
         let merges = post
