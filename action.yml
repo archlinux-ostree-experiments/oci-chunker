@@ -1,0 +1,154 @@
+# action.yml
+name: 'oci-chunker'
+description: 'Create OSTree repositories from container images and chunk these images into multiple layers'
+inputs:
+  chunker-image:
+    description: 'Container image reference of an image containing the oci-chunker executable'
+    required: false
+    default: 'ghcr.io/archlinux-ostree-experiments/oci-chunker:latest'
+  input:
+    description: 'Input image from containers-storage'
+    required: true
+  pkgdbtype:
+    description: 'Package manager. Valid values: alpm, rpm'
+    required: true
+  pkgdbpath:
+    description: 'Path to the package manager database'
+    required: false
+  pkgidx:
+    description: 'Package index output file'
+    required: false
+    default: "pkgidx.json"
+  changelog:
+    description: 'Strategy to obtain the changes field inside the package index. Valid values: previous-index, package-database'
+    required: true
+    default: 'previous-index'
+  postprocessing:
+    description: 'Path to a TOML file containing post-processing rules'
+    required: false
+  resolution:
+    description: 'Changelog resolution. Valid values: daily, weekly, monthly, exact'
+    required: false
+    default: "weekly"
+  layers:
+    description: 'Target image layer count'
+    required: false
+    default: "64"
+  labels:
+    description: 'Labels to add to the chunked output image'
+    required: false
+    default: |
+      containers.bootc=1
+      ostree.bootable=1
+  output:
+    description: 'Output image'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Cache Package Index
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: "${{ inputs.pkgidx }}"
+        key: "pkgidx-${{ runner.arch }}"
+    - name: Mount Image
+      id: mount
+      shell: bash
+      run: |
+        echo "Create container from target image: ${{ inputs.input }}..."
+        CREF=$(sudo podman create ${{ inputs.input }} bash)
+        echo "Container $CREF created. Mount..."
+        MOUNT=$(sudo podman mount $CREF)
+        echo "Mounted container as $MOUNT"
+        echo "container=$CREF" >> $GITHUB_OUTPUT
+        echo "mount=$MOUNT" >> $GITHUB_OUTPUT
+    - name: Create OSTree Commit
+      shell: bash
+      run: |
+        mkdir outputs
+        sudo podman run --rm \
+            -v "${{ steps.mount.outputs.mount }}":/var/tree \
+            -v "cache_ostree:/var/ostree" \
+            -v "./outputs:/var/outputs" \
+            -u 0:0 \
+            ${{ inputs.chunker-image }} \
+            oci-chunker generate-ostree-repo --rootfs /var/tree --output /var/ostree --output-commitid /var/outputs/commitid
+    
+    - name: Build Package Index
+      id: pkgidx
+      shell: bash
+      run: |
+        set -exo pipefail
+
+        BUILD_PACKAGE_INDEX_ARGS="--changelog-resolution ${{ inputs.resolution }} --changelog-source"
+
+        if [ "x${{ inputs.changelog }}" = "xprevious-index" ]; then
+          if [ -f "${{ inputs.pkgidx }}" ]; then
+            mv "${{ inputs.pkgidx }}" "./outputs/previous_pkgidx.json"
+            BUILD_PACKAGE_INDEX_ARGS="$BUILD_PACKAGE_INDEX_ARGS previous-index --previous-package-index /var/outputs/previous_pkgidx.json"
+          else
+            BUILD_PACKAGE_INDEX_ARGS="$BUILD_PACKAGE_INDEX_ARGS initialize"
+          fi
+        else
+          BUILD_PACKAGE_INDEX_ARGS="$BUILD_PACKAGE_INDEX_ARGS ${{ inputs.changelog }}"
+        fi
+
+        if [ "x${{ inputs.postprocessing }}" != "x" ]; then
+          cp -v "${{ inputs.postprocessing }}" ./outputs/postprocessing.toml
+          BUILD_PACKAGE_INDEX_ARGS="$BUILD_PACKAGE_INDEX_ARGS --postprocessing /var/outputs/postprocessing.toml"
+        fi
+
+        if [ "x${{ inputs.pkgdbpath }}" != "x" ]; then
+          BUILD_PACKAGE_INDEX_ARGS="--pkgdb-path ${{ inputs.pkgdbpath }} $BUILD_PACKAGE_INDEX_ARGS"
+        fi
+
+        BUILD_PACKAGE_INDEX_ARGS="--sysroot /var/tree --output-package-index /var/outputs/pkgidx.json --backend ${{ inputs.pkgdbtype }} $BUILD_PACKAGE_INDEX_ARGS"
+
+        echo "Build package index using args: $BUILD_PACKAGE_INDEX_ARGS"
+        sudo podman run --rm \
+            -v "${{ steps.mount.outputs.mount }}":/var/tree \
+            -v "./outputs:/var/outputs" \
+            -u 0:0 \
+            ${{ inputs.chunker-image }} \
+            oci-chunker build-package-index $BUILD_PACKAGE_INDEX_ARGS
+        
+        cp -vf ./outputs/pkgidx.json "${{ inputs.pkgidx }}"
+        
+        # Now we don't need the original image contents anymore
+        echo Unmounting and removing container
+        sudo podman unmount ${{ steps.mount.outputs.container }}
+        sudo podman rm ${{ steps.mount.outputs.container }}
+        sudo podman rmi ${{ inputs.input }}
+    - name: Create a chunked image
+      id: chunked
+      shell: bash
+      run: |
+        set -exo pipefail
+
+        LABELS=""
+        while read -r label; do
+          [ -z "$label" ] && continue
+          LABELS="--label $label $LABELS"
+        done <<< "${{ inputs.labels }}"
+
+        echo "Using labels: $LABELS"
+
+        COMMIT=$(< outputs/commitid)
+        echo "Using commit: $COMMIT"
+
+        sudo podman run --rm \
+          -v "cache_ostree:/var/ostree" \
+          -v "./outputs:/var/outputs" \
+          -u 0:0 \
+          ${{ inputs.chunker-image }} \
+          oci-chunker generate-chunked-oci --package-index /var/outputs/pkgidx.json --repo /var/ostree --max-layers ${{ inputs.layers }} $LABELS $COMMIT "oci:/var/outputs/oci"
+        
+        echo "image=$(realpath ./outputs/oci)" >> $GITHUB_OUTPUT
+        
+        # Remove cached OSTree volume
+        sudo podman volume rm cache_ostree
+
+branding:
+  icon: 'copy'
+  color: 'blue'
