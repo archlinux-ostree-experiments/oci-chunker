@@ -1,0 +1,4 @@
+[merge_packages]
+"basepkg" = ["base", "filesystem"]
+"certificates" = ["ca-certificates", "ca-certificates-mozilla", "ca-certificates-utils"]
+"dbuspkg" = ["dbus", "dbus-broker", "dbus-units"]
